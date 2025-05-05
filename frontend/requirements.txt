@@ -1,0 +1,5 @@
+streamlit
+ultralytics
+requests
+python-dotenv
+Pillow
