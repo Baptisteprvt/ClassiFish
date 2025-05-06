@@ -1,25 +1,28 @@
-from pymongo import MongoClient
-from dotenv import load_dotenv
 import os
+from pymongo import MongoClient
+import gridfs
+from dotenv import load_dotenv
 
-load_dotenv()  # charge .env
-
+load_dotenv()
 client = MongoClient(os.getenv("ATLAS_URI"))
-db_name = os.getenv("DB_NAME")
-if not db_name:
-    raise ValueError("DB_NAME is not set in .env")
-db = client[db_name]
+db = client[os.getenv("DB_NAME")]
 
-# Suppression des anciennes images (facultatif si tu veux une base propre)
-db.images.delete_many({})
+fs = gridfs.GridFS(db)
+images_col = db["images"]
 
-# Ajout des nouvelles
-image_dir = "frontend/images_to_classify"
-for img in os.listdir(image_dir):
-    db.images.insert_one({
-        "image": f"{image_dir}/{img}",
+local_folder = "images_to_classify"
+for fname in os.listdir(local_folder):
+    if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
+        continue
+    path = os.path.join(local_folder, fname)
+    with open(path, "rb") as f:
+        file_id = fs.put(f, filename=fname, contentType="image/jpeg")
+    images_col.insert_one({
+        "file_id": file_id,
+        "filename": fname,
         "ground_truth": None,
         "validated": False,
         "annotations_count": 0,
         "votes": 0
     })
+    print(f"Uploadé {fname} → file_id={file_id}")

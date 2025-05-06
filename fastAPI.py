@@ -1,22 +1,11 @@
-from fastapi import FastAPI, HTTPException
-from mongo_setup import add_annotation, get_pending_image
+from pymongo import MongoClient
+from bson import ObjectId
+import os
+from dotenv import load_dotenv
 
-app = FastAPI()
+load_dotenv()
+client = MongoClient(os.getenv("ATLAS_URI"))
+db = client[os.getenv("DB_NAME")]
 
-@app.get("/next_image")
-async def next_image():
-    img = get_pending_image()
-    if not img:
-        raise HTTPException(404, "Aucune image disponible")
-    return {"image": img["image"], "url": f"/images/{img['image']}"}
-
-@app.post("/annotate")
-async def annotate(payload: dict):
-    res = add_annotation(
-        image=payload["image"],
-        user_id=payload["user_id"],
-        user_label=payload["label"],
-        prediction_ia=payload.get("prediction_ia"),
-        timestamp=payload.get("timestamp")
-    )
-    return {"inserted_id": str(res.inserted_id)}
+doc = db.images.find_one({"_id": ObjectId("6818c81b13f22e4251529f61")})
+print(doc)
