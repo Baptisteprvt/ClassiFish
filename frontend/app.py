@@ -73,12 +73,12 @@ def fetch_new_image():
 # --- Fonction : charger les stats utilisateur ---
 def get_user_details(user_id):
     try:
-        res = requests.get(f"{BACKEND_URL}/user_details/{user_id}")
-        if res.ok:
-            return res.json()
-    except:
-        pass
-    return None
+        res = requests.get(f"{BACKEND_URL}/user_details/{user_id}", timeout=5)
+        res.raise_for_status()
+        return res.json()
+    except requests.exceptions.RequestException as e:
+        st.warning("⚠️ Impossible de charger les stats utilisateur.")
+        return None
 
 
 # --- Écran d’authentification ---
@@ -159,10 +159,6 @@ else:
     col1, col2 = st.columns([3, 1])
     with col1:
         st.markdown(f"**📷 Images restantes : `{remaining}`**")
-    # with col2:
-    #     if st.button("🆕 Nouvelle image", use_container_width=True):
-    #         fetch_new_image()
-    #         st.rerun()
 
     # Affichage de l'image
     if st.session_state.img_to_display is not None:
@@ -170,8 +166,11 @@ else:
 
         chosen = st.selectbox("Espèce :", ["ABL", "ALA", "ANG", "BRE", "CHE", "HOT", "SIL"])
 
-        if st.session_state.is_test:
-            st.warning("⚠️ Cette image est un test. Votre réponse sera évaluée.")
+        if not st.session_state.is_test:
+            if st.button("⏭️ Passer cette image", use_container_width=True):
+                # Passe direct à la suivante sans sauvegarder
+                fetch_new_image()
+                st.rerun()
 
         if st.button("✅ Soumettre annotation", use_container_width=True):
             payload = {
@@ -193,6 +192,28 @@ else:
                     st.session_state.user_accuracy = accuracy
                     st.info(f"{'✅ Bonne réponse' if correct else '❌ Mauvaise réponse'} | Score actuel : {int(accuracy * 100)}%")
 
+                # 🔁 Appel à vote_annotation uniquement si ce n'est pas une image test
+                if not st.session_state.is_test:
+                    try:
+                        res_vote = requests.post(f"{BACKEND_URL}/vote_annotation", json={
+                            "image_id": st.session_state.img_id,
+                            "user_id": user_id,
+                            "label": chosen
+                        })
+
+                        if res_vote.status_code == 403:
+                            st.warning("⚠️ Votre fiabilité < 75%, votre vote n’a pas été compté.")
+                        elif res_vote.status_code == 400:
+                            pass  # Image déjà validée ou erreur
+                        elif res_vote.ok:
+                            vote_data = res_vote.json()
+                            if "ground_truth" in vote_data:
+                                st.balloons()
+                                st.success(f"🎉 Cette image vient d'être validée comme : {vote_data['ground_truth']}")
+
+                    except Exception as e:
+                        st.warning("⚠️ Impossible d'enregistrer votre vote.")
+
                 fetch_new_image()
                 st.rerun()
             else:
@@ -200,6 +221,7 @@ else:
     
     else:
         if remaining == 0 :
+            st.balloons()
             st.info("Merci pour votre participation !")
         else :
             st.info("Identifiez vous pour commencer.")

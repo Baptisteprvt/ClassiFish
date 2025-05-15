@@ -38,3 +38,21 @@ if "fs.files" in db.list_collection_names():
     print("🗑️ Collection 'fs.files' supprimée.")
 
 print("✅ Base de données nettoyée avec succès.")
+# from pymongo import MongoClient
+# from dotenv import load_dotenv
+# import os
+
+# load_dotenv()
+# print("🔍 Chargement du .env")
+# print("ATLAS_URI =", os.getenv("ATLAS_URI"))
+# print("DB_NAME =", os.getenv("DB_NAME"))
+
+# uri = os.getenv("ATLAS_URI")
+# client = MongoClient(uri)
+
+# # Tester la connexion
+# try:
+#     client.admin.command('ping')
+#     print("✅ Connexion réussie !")
+# except Exception as e:
+#     print("❌ Erreur de connexion :", e)
