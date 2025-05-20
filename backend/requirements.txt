@@ -3,3 +3,4 @@ uvicorn[standard]==0.22.0
 pymongo==4.4.0
 python-dotenv==1.0.0
 streamlit
+gdown

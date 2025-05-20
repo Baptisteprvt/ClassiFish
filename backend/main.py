@@ -10,7 +10,10 @@ from bson import ObjectId
 import gridfs
 from dotenv import load_dotenv
 from collections import defaultdict
-import streamlit as st
+import random
+from PIL import Image
+import random
+from ultralytics import YOLO
 
 # --- Configuration ---
 load_dotenv()
@@ -32,14 +35,18 @@ db = client[DB_NAME]
 images_col = db["images"]
 annotations_col = db["annotations"]
 users_col = db["users"]
-votes_col = db["votes"]  # ✅ Nouvelle collection
+votes_col = db["votes"]
 fs = gridfs.GridFS(db)
+
+# --- Nouvelle collection pour les prédictions IA ---
+ai_predictions_col = db["ai_predictions"]
 
 # --- Indexes ---
 images_col.create_index("validated")
 annotations_col.create_index([("image", 1), ("user_id", 1)])
 users_col.create_index("user_id", unique=True)
 votes_col.create_index([("image_id", 1), ("user_id", 1)])
+ai_predictions_col.create_index([("image_id", 1), ("user_id", 1)])
 
 # --- Schémas Pydantic ---
 class AnnotationRequest(BaseModel):
@@ -65,40 +72,40 @@ class UserDetails(UserStats):
     test_correct: int
     test_accuracy: float
 
+# --- Chargement du modèle IA ---
 app = FastAPI()
+model = YOLO("best.pt")
+labels = ["ABL", "ALA", "ANG", "BAF", "BRE", "CHE", "HOT", "SIL"]
+
+# --- Fonction de prédiction ---
+def predict_image(img_pil: Image.Image):
+    """
+    Prédit l'espèce de poisson à partir d'une image PIL avec YOLOv8
+    """
+    results = model(img_pil, verbose=False)  # Désactive les logs verbeux
+    for result in results:
+        probs = result.probs  # Probabilités des classes
+        if probs is not None:
+            class_id = probs.top1  # Meilleure classe
+            return labels[class_id]
+    return None
 
 # --- Routes ---
 
-import random
-
 @app.get("/image")
 def get_image(user_id: str):
-    """
-    Récupère :
-    1. Si < 30 tests : priorité aux tests disponibles
-    2. Sinon : 1 chance sur 10 d'avoir un test → sinon image normale
-    """
+    max_test = 8
+    test_chance = 0.1
 
-    max_test = 5
-    test_chance = 0.1  # 10% de chance d'avoir un test après les 30 premiers
+    annotated_ids = [ann["image"] for ann in annotations_col.find({"user_id": user_id}, {"image": 1})]
+    nb_test_done = annotations_col.count_documents({"user_id": user_id, "is_test": True})
 
-    annotated_ids = [
-        ann["image"] for ann in annotations_col.find({"user_id": user_id}, {"image": 1})
-    ]
-
-    # Compte combien d'annotations sont des tests
-    test_annotations = list(annotations_col.find({
-        "user_id": user_id,
-        "is_test": True
-    }))
-    nb_test_done = len(test_annotations)
-
-    # --- CAS : Utilisateur n'a pas encore fait ses 30 tests ---
     if nb_test_done < max_test:
-        # Cherche une image test non annotée
         pipeline = [
             {"$match": {
-                "ground_truth": {"$ne": None},
+                "ground_truth": {"$ne": None,     # ≠ null / None
+                                 "$ne": ""},
+
                 "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}
             }},
             {"$sample": {"size": 1}}
@@ -106,28 +113,18 @@ def get_image(user_id: str):
         test_img = list(images_col.aggregate(pipeline))
         if test_img:
             img_doc = test_img[0]
-            st.session_state.is_test = True
         else:
-            # Pas d'image test dispo → image normale
-            pipeline = [
-                {"$match": {
-                    "validated": False,
-                    "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}
-                }},
-                {"$sample": {"size": 1}}
-            ]
+            pipeline = [{"$match": {"validated": False, "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}}}, {"$sample": {"size": 1}}]
             normal_img = list(images_col.aggregate(pipeline))
             if not normal_img:
                 raise HTTPException(404, "Aucune image disponible.")
             img_doc = normal_img[0]
-
-    # --- CAS : Utilisateur a déjà fait 30 tests → rarement un test ---
     else:
-        # Tirage au sort : 1/10 chance de recevoir un test
         if random.random() <= test_chance:
             pipeline = [
                 {"$match": {
-                    "ground_truth": {"$ne": None},
+                    "ground_truth": {"$ne": None,     # ≠ null / None
+                                     "$ne": ""},
                     "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}
                 }},
                 {"$sample": {"size": 1}}
@@ -135,30 +132,14 @@ def get_image(user_id: str):
             test_img = list(images_col.aggregate(pipeline))
             if test_img:
                 img_doc = test_img[0]
-                st.session_state.is_test = True
             else:
-                # Aucun test dispo → image normale
-                pipeline = [
-                    {"$match": {
-                        "validated": False,
-                        "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}
-                    }},
-                    {"$sample": {"size": 1}}
-                ]
+                pipeline = [{"$match": {"validated": False, "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}}}, {"$sample": {"size": 1}}]
                 normal_img = list(images_col.aggregate(pipeline))
                 if not normal_img:
                     raise HTTPException(404, "Aucune image disponible.")
                 img_doc = normal_img[0]
-
-        # 9/10 du temps → image normale
         else:
-            pipeline = [
-                {"$match": {
-                    "validated": False,
-                    "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}
-                }},
-                {"$sample": {"size": 1}}
-            ]
+            pipeline = [{"$match": {"validated": False, "ground_truth": {"$eq": None, "$eq" : ""}, "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}}}, {"$sample": {"size": 1}}]
             normal_img = list(images_col.aggregate(pipeline))
             if not normal_img:
                 raise HTTPException(404, "Aucune image disponible.")
@@ -171,14 +152,32 @@ def get_image(user_id: str):
         images_col.delete_one({"_id": img_doc["_id"]})
         raise HTTPException(500, "Fichier introuvable")
 
+    is_test = bool(img_doc.get("ground_truth")) and (nb_test_done < max_test or random.random() <= test_chance)
+    encoded_image = base64.b64encode(img_b).decode("utf-8")
+
+    # Prédiction IA si c'est un test
+    ai_prediction = None
+    pil_image = Image.open(BytesIO(base64.b64decode(encoded_image)))
+    ai_prediction = predict_image(pil_image)
+    ai_predictions_col.update_one(
+        {"image_id": str(img_doc["_id"]), "user_id": user_id},
+        {"$setOnInsert": {
+            "image_id": str(img_doc["_id"]),
+            "user_id": user_id,
+            "predicted_label": ai_prediction,
+            "timestamp": datetime.utcnow()
+        }},
+        upsert=True
+    )
+
     return {
         "image_id": str(img_doc["_id"]),
-        "image": base64.b64encode(img_b).decode("utf-8"),
-        "is_test": bool(img_doc.get("ground_truth")) and (
-            nb_test_done < max_test or random.random() <= test_chance
-        ),
-        "expected_label": img_doc.get("ground_truth")
+        "image": encoded_image,
+        "is_test": is_test,
+        "expected_label": img_doc.get("ground_truth"),
+        "ai_prediction": ai_prediction  # Non transmis à l'utilisateur
     }
+
 
 @app.post("/annotations")
 def save_annotation(ann: AnnotationRequest):
@@ -197,7 +196,6 @@ def save_annotation(ann: AnnotationRequest):
     })
 
     user = users_col.find_one({"user_id": ann.user_id})
-
     if ann.is_test:
         if not user:
             user = {
@@ -206,11 +204,9 @@ def save_annotation(ann: AnnotationRequest):
                 "test_correct": 0,
                 "test_accuracy": 0.0
             }
-
         total = user.get("test_annotations", 0) + 1
         correct_count = user.get("test_correct", 0) + (1 if ann.label == ann.expected_label else 0)
         accuracy = correct_count / total if total > 0 else 0.0
-
         users_col.update_one(
             {"user_id": ann.user_id},
             {"$set": {
@@ -223,6 +219,42 @@ def save_annotation(ann: AnnotationRequest):
 
     images_col.update_one({"_id": img_oid}, {"$inc": {"annotations_count": 1}})
     return {"message": "Annotation enregistrée"}
+
+
+@app.get("/ai-stats")
+def get_ai_stats(user_id: str):
+    user_tests = list(annotations_col.find({
+        "user_id": user_id,
+        "is_test": True
+    }))
+
+    if not user_tests:
+        raise HTTPException(404, "Pas d'annotations test trouvées.")
+
+    user_correct = 0
+    ai_correct = 0
+
+    for test in user_tests:
+        expected = test.get("expected_label")
+        user_label = test.get("label")
+        pred = ai_predictions_col.find_one({
+            "image_id": test["image"],
+            "user_id": user_id
+        })
+        ai_label = pred.get("predicted_label") if pred else None
+
+        if user_label == expected:
+            user_correct += 1
+        if ai_label == expected:
+            ai_correct += 1
+
+    total = len(user_tests)
+    return {
+        "user_score": user_correct / total,
+        "ai_score": ai_correct / total,
+        "total": total
+    }
+
 
 @app.post("/vote_annotation")
 def vote_annotation(data: dict):
@@ -297,6 +329,7 @@ def vote_annotation(data: dict):
                 "ground_truth": None,
                 "confidence_ratio": confidence
             }
+        
 
     return {"message": "Vote enregistré.", "total_weight": total_weight}
 
@@ -349,3 +382,38 @@ def login_or_register(data: dict):
             "test_accuracy": 0.0
         })
         return {"exists": False, "message": "Nouvel utilisateur créé"}
+    
+@app.get("/comparison")
+def get_comparison(user_id: str):
+    # Récupère toutes les annotations de test de l'utilisateur
+    user_tests = list(annotations_col.find({
+        "user_id": user_id
+    }))
+
+    if not user_tests:
+        raise HTTPException(404, "Aucune annotation test trouvée.")
+
+    comparisons = []
+    for test in user_tests:
+        image_id = test["image"]
+        expected = test.get("expected_label")
+        user_label = test.get("label")
+
+        # Recherche la prédiction IA associée
+        ai_pred = ai_predictions_col.find_one({
+            "image_id": image_id,
+            "user_id": user_id
+        })
+
+        ai_label = ai_pred.get("predicted_label") if ai_pred else None
+
+        comparisons.append({
+            "image_id": image_id,
+            "attendu": expected,
+            "utilisateur": user_label,
+            "ia": ai_label,
+            "correct_utilisateur": user_label == expected,
+            "correct_ia": ai_label == expected if ai_label and expected else None
+        })
+
+    return {"results": comparisons}

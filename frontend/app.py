@@ -130,6 +130,64 @@ else:
     user_id = st.session_state.user_id
     st.sidebar.header(f"👤 {user_id}")
 
+    if st.sidebar.button("📊 Comparer mes votes à l'IA", use_container_width=True):
+        with st.spinner("Chargement des comparaisons..."):
+            try:
+                res = requests.get(f"{BACKEND_URL}/comparison?user_id={user_id}")
+                data = res.json()
+                comparison_data = data.get("results", [])
+
+                if not comparison_data:
+                    st.warning("Aucune comparaison disponible.")
+
+                # Préparation des données pour affichage
+                table = []
+
+                for item in comparison_data:
+                    table.append({
+                        "Image ID": item["image_id"],
+                        "Attendu": item["attendu"] or "",
+                        "Utilisateur": item["utilisateur"] or "",
+                        "IA": item["ia"] or ""
+                    })
+                # Affichage du tableau
+                import pandas as pd
+                df = pd.DataFrame(table)
+                st.dataframe(df, hide_index=True)
+
+            except Exception as e:
+                st.error(f"Erreur lors de la récupération des comparaisons : {str(e)}")
+
+    try:
+        ai_stats = requests.get(f"{BACKEND_URL}/ai-stats?user_id={user_id}").json()
+
+        st.sidebar.subheader("Performance :")
+
+        col1, col2 = st.sidebar.columns(2)
+        user_score = int(ai_stats['user_score'] * 100)
+        ai_score = int(ai_stats['ai_score'] * 100)
+
+        with col1:
+            st.write("🧠 Toi")
+            st.progress(user_score)
+            st.caption(f"{user_score}%")
+
+        with col2:
+            st.write("🤖 IA")
+            st.progress(ai_score)
+            st.caption(f"{ai_score}%")
+
+        if user_score > ai_score:
+            st.sidebar.success("🎉 Tu bats l'IA !")
+        elif user_score < ai_score:
+            st.sidebar.info("🤖 L'IA gagne cette fois-ci.")
+        else:
+            st.sidebar.warning("⚖️ Match nul !")
+
+    except Exception as e:
+        pass  # Aucun test encore effectué ou erreur
+
+
     # Charger les stats utilisateur si pas encore fait
     if 'user_initialized' not in st.session_state:
         details = get_user_details(user_id)
@@ -143,11 +201,6 @@ else:
                 st.session_state.user_accuracy = accuracy
 
         st.session_state.user_initialized = True
-
-    # Affichage du score utilisateur
-    if st.session_state.user_accuracy is not None:
-        accuracy_percent = int(st.session_state.user_accuracy * 100)
-        st.sidebar.info(f"📊 Fiabilité actuelle : {accuracy_percent}%")
 
     # Stats utilisateurs
     try:
@@ -164,7 +217,7 @@ else:
     if st.session_state.img_to_display is not None:
         st.image(st.session_state.img_to_display, caption="Image à annoter", use_container_width=True)
 
-        chosen = st.selectbox("Espèce :", ["ABL", "ALA", "ANG", "BRE", "CHE", "HOT", "SIL"])
+        chosen = st.selectbox("Espèce :", ["ABL", "ALA", "ANG", "BAF", "BRE", "CHE", "HOT", "SIL"])
 
         if not st.session_state.is_test:
             if st.button("⏭️ Passer cette image", use_container_width=True):
@@ -208,8 +261,9 @@ else:
                         elif res_vote.ok:
                             vote_data = res_vote.json()
                             if "ground_truth" in vote_data:
+                                st.sidebar.subheader("Succès : ")
                                 st.balloons()
-                                st.success(f"🎉 Cette image vient d'être validée comme : {vote_data['ground_truth']}")
+                                st.sidebar.success(f"🎉 L'image vient à été validée comme : {vote_data['ground_truth']}")
 
                     except Exception as e:
                         st.warning("⚠️ Impossible d'enregistrer votre vote.")

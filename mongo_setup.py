@@ -11,7 +11,7 @@ client = MongoClient(os.getenv("ATLAS_URI"))
 db = client[os.getenv("DB_NAME")]
 fs = gridfs.GridFS(db)
 images_col = db["images"]
-VALID_LABELS = {"ABL", "ALA", "ANG", "BRE", "CHE", "HOT", "SIL"}
+VALID_LABELS = {"ABL", "ALA", "ANG", "BAF", "BRE", "CHE", "HOT", "SIL"}
 
 local_folder = "images_to_classify"
 

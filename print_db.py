@@ -93,14 +93,32 @@ def print_votes():
             print(f"      - [{v['user']}] ➤ '{v['label']}' | Poids : {v['poids']} | Date : {v['date']}")
         print("-" * 40)
 
+def print_ai_predictions():
+    print("\n=== 🤖 PRÉDICTIONS DE L'IA ===\n")
+    ai_predictions_col = db["ai_predictions"]
+    predictions = list(ai_predictions_col.find())
+    
+    if not predictions:
+        print("Aucune prédiction IA trouvée.")
+        return
+
+    for pred in predictions:
+        print(f"🧠 Prédiction par l'IA :")
+        print(f"   Image ID : {pred.get('image_id')}")
+        print(f"   Utilisateur : {pred.get('user_id')}")
+        print(f"   Étiquette prédite : {pred.get('predicted_label')}")
+        print(f"   Date de prédiction : {pred.get('timestamp', 'N/A')}")
+        print("-" * 40)
+
+
 if __name__ == "__main__":
     print("🔍 CONNECTÉ À LA BASE DE DONNÉES 🔍")
     print("Nom de la base :", db.name)
     print("=" * 60)
 
     print_users()
+    print_ai_predictions()
     print_images()
-    # print_annotations()
     print_votes()
 
     print("\n✅ FIN DE L’AFFICHAGE\n")

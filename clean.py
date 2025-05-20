@@ -16,7 +16,7 @@ if not db_name:
 db = client[db_name]
 
 # Suppression des collections standard
-collections = ["images", "annotations", "users"]
+collections = ["images", "annotations", "users", "ai_predictions", "votes"]
 for col in collections:
     if col in db.list_collection_names():
         db.drop_collection(col)
