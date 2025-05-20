@@ -4,3 +4,4 @@ pymongo==4.4.0
 python-dotenv==1.0.0
 streamlit
 gdown
+ultralytics
