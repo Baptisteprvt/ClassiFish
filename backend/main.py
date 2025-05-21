@@ -94,7 +94,7 @@ def predict_image(img_pil: Image.Image):
 
 @app.get("/image")
 def get_image(user_id: str):
-    max_test = 8
+    max_test = 30
     test_chance = 0.1
 
     annotated_ids = [ann["image"] for ann in annotations_col.find({"user_id": user_id}, {"image": 1})]
@@ -103,8 +103,7 @@ def get_image(user_id: str):
     if nb_test_done < max_test:
         pipeline = [
             {"$match": {
-                "ground_truth": {"$ne": None,     # ≠ null / None
-                                 "$ne": ""},
+                "ground_truth": {"$ne": None},
 
                 "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}
             }},
@@ -123,8 +122,7 @@ def get_image(user_id: str):
         if random.random() <= test_chance:
             pipeline = [
                 {"$match": {
-                    "ground_truth": {"$ne": None,     # ≠ null / None
-                                     "$ne": ""},
+                    "ground_truth": {"$ne": None},
                     "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}
                 }},
                 {"$sample": {"size": 1}}
@@ -139,7 +137,7 @@ def get_image(user_id: str):
                     raise HTTPException(404, "Aucune image disponible.")
                 img_doc = normal_img[0]
         else:
-            pipeline = [{"$match": {"validated": False, "ground_truth": {"$eq": None, "$eq" : ""}, "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}}}, {"$sample": {"size": 1}}]
+            pipeline = [{"$match": {"validated": False, "ground_truth": {"$eq": None}, "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}}}, {"$sample": {"size": 1}}]
             normal_img = list(images_col.aggregate(pipeline))
             if not normal_img:
                 raise HTTPException(404, "Aucune image disponible.")
@@ -322,7 +320,7 @@ def vote_annotation(data: dict):
         elif confidence < 0.6:  # Seuil de confiance bas
             images_col.update_one(
                 {"_id": ObjectId(image_id)},
-                {"$unset": {"ground_truth": ""}}
+                {"$unset": {"ground_truth": None}}
             )
             return {
                 "message": f"Confiance insuffisante pour l'image : {best_label}",
