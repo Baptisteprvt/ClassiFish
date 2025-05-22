@@ -274,7 +274,7 @@ else:
         for i, label in enumerate(species_labels):
             with cols[i % 4]:
                 st.markdown("<div style='margin-bot:10px'></div>", unsafe_allow_html=True)
-                st.image(f"frontend/images/{label}.jpg", use_container_width=True)
+                st.image(f"images/{label}.jpg", use_container_width=True)
                 if st.button(label, key=f"btn_{label}", use_container_width=True):
                     chosen = label
 
