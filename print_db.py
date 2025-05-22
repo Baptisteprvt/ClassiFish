@@ -117,8 +117,8 @@ if __name__ == "__main__":
     print("=" * 60)
 
     print_users()
-    print_ai_predictions()
-    print_images()
-    print_votes()
+    # print_ai_predictions()
+    # print_images()
+    # print_votes()
 
     print("\n✅ FIN DE L’AFFICHAGE\n")

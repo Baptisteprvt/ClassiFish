@@ -1,6 +1,7 @@
 import os
 from io import BytesIO
 from datetime import datetime
+import time
 from typing import Optional
 import base64
 from fastapi import FastAPI, HTTPException
@@ -82,7 +83,9 @@ def predict_image(img_pil: Image.Image):
     """
     Prédit l'espèce de poisson à partir d'une image PIL avec YOLOv8
     """
-    results = model(img_pil, verbose=False)  # Désactive les logs verbeux
+    t0 = time.time()
+    results = model(img_pil, verbose=False)
+    print("Prediction time:", time.time() - t0)
     for result in results:
         probs = result.probs  # Probabilités des classes
         if probs is not None:
@@ -94,8 +97,10 @@ def predict_image(img_pil: Image.Image):
 
 @app.get("/image")
 def get_image(user_id: str):
-    max_test = 30
+    max_test = 5
     test_chance = 0.1
+    will_it_be_test = random.random()
+    only_val = False
 
     annotated_ids = [ann["image"] for ann in annotations_col.find({"user_id": user_id}, {"image": 1})]
     nb_test_done = annotations_col.count_documents({"user_id": user_id, "is_test": True})
@@ -119,7 +124,7 @@ def get_image(user_id: str):
                 raise HTTPException(404, "Aucune image disponible.")
             img_doc = normal_img[0]
     else:
-        if random.random() <= test_chance:
+        if will_it_be_test <= test_chance: # On teste
             pipeline = [
                 {"$match": {
                     "ground_truth": {"$ne": None},
@@ -140,9 +145,11 @@ def get_image(user_id: str):
             pipeline = [{"$match": {"validated": False, "ground_truth": {"$eq": None}, "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}}}, {"$sample": {"size": 1}}]
             normal_img = list(images_col.aggregate(pipeline))
             if not normal_img:
-                raise HTTPException(404, "Aucune image disponible.")
+                only_val = True
+                pipeline = [{"$match": {"validated": False, "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}}}, {"$sample": {"size": 1}}]
+                normal_img = list(images_col.aggregate(pipeline))
             img_doc = normal_img[0]
-
+    
     try:
         grid_out = fs.get(img_doc["file_id"])
         img_b = grid_out.read()
@@ -150,7 +157,7 @@ def get_image(user_id: str):
         images_col.delete_one({"_id": img_doc["_id"]})
         raise HTTPException(500, "Fichier introuvable")
 
-    is_test = bool(img_doc.get("ground_truth")) and (nb_test_done < max_test or random.random() <= test_chance)
+    is_test = bool(img_doc.get("ground_truth")) and (nb_test_done < max_test or will_it_be_test <= test_chance or only_val)
     encoded_image = base64.b64encode(img_b).decode("utf-8")
 
     # Prédiction IA si c'est un test
@@ -200,7 +207,8 @@ def save_annotation(ann: AnnotationRequest):
                 "user_id": ann.user_id,
                 "test_annotations": 0,
                 "test_correct": 0,
-                "test_accuracy": 0.0
+                "test_accuracy": 0.0,
+                "annotations_total": 0
             }
         total = user.get("test_annotations", 0) + 1
         correct_count = user.get("test_correct", 0) + (1 if ann.label == ann.expected_label else 0)
@@ -210,11 +218,21 @@ def save_annotation(ann: AnnotationRequest):
             {"$set": {
                 "test_annotations": total,
                 "test_correct": correct_count,
-                "test_accuracy": accuracy
+                "test_accuracy": accuracy,
             }},
             upsert=True
         )
-
+    if(user.get("test_accuracy", 0) > SEUIL_CONFIANCE_MIN):
+        annotations = user.get("annotations_total", 0) + 1
+    else:
+        annotations = user.get("annotations_total", 0)
+    users_col.update_one(
+                {"user_id": ann.user_id},
+                {"$set": {
+                    "annotations_total": annotations
+                }},
+                upsert=True
+            )
     images_col.update_one({"_id": img_oid}, {"$inc": {"annotations_count": 1}})
     return {"message": "Annotation enregistrée"}
 
@@ -377,7 +395,7 @@ def login_or_register(data: dict):
             "password": password,
             "test_annotations": 0,
             "test_correct": 0,
-            "test_accuracy": 0.0
+            "test_accuracy": 1.0
         })
         return {"exists": False, "message": "Nouvel utilisateur créé"}
     
@@ -415,3 +433,91 @@ def get_comparison(user_id: str):
         })
 
     return {"results": comparisons}
+
+@app.get("/leaderboard")
+def get_leaderboard(user_id: Optional[str] = None):
+    SEUIL_CONFIANCE_MIN = 0.75
+
+    # Liste des utilisateurs fiables triés par nombre d'annotations
+    pipeline = [
+        {"$project": {
+            "user_id": 1,
+            "annotations_total": {"$ifNull": ["$annotations_total", 0]},
+            "test_accuracy": 1
+        }},
+        {"$sort": {"annotations_total": -1, "test_accuracy": -1}}
+    ]
+    all_users = list(users_col.aggregate(pipeline))
+
+    top_5 = all_users[:5]
+
+    response = {
+        "top_users": [
+            {
+                "user_id": u["user_id"],
+                "annotations_total": u["annotations_total"],
+                "test_accuracy": round(u.get("test_accuracy", 0.0) * 100)
+            }
+            for u in top_5
+        ]
+    }
+
+    # Si un user_id est fourni, trouver sa position
+    if user_id:
+        for rank, user in enumerate(all_users, start=1):
+            if user["user_id"] == user_id:
+                response["user_rank"] = {
+                    "rank": rank,
+                    "user_id": user_id,
+                    "annotations_total": user["annotations_total"],
+                    "test_accuracy": round(user.get("test_accuracy", 0.0) * 100)
+                }
+                break
+
+    return response
+
+@app.post("/report_unrecognizable")
+def report_unrecognizable(data: dict):
+    image_id = data.get("image_id")
+    user_id = data.get("user_id")
+    
+    if not image_id or not user_id:
+        raise HTTPException(400, "Données incomplètes.")
+
+    user = users_col.find_one({"user_id": user_id})
+    if not user or user.get("test_accuracy", 0.0) < SEUIL_CONFIANCE_MIN:
+        raise HTTPException(403, "Fiabilité insuffisante pour signaler une image.")
+
+    image = images_col.find_one({"_id": ObjectId(image_id)})
+    if not image:
+        raise HTTPException(404, "Image introuvable.")
+
+    # Ajoute le user_id au champ "reported_by"
+    update = images_col.update_one(
+        {"_id": ObjectId(image_id)},
+        {"$addToSet": {"reported_by": user_id}}
+    )
+
+    updated_image = images_col.find_one({"_id": ObjectId(image_id)})
+    reporters = updated_image.get("reported_by", [])
+
+    # Enregistre annotation spéciale (pour filtrer dans les prochaines images)
+    annotations_col.insert_one({
+        "image": image_id,
+        "user_id": user_id,
+        "label": "UNRECOGNIZABLE",
+        "timestamp": datetime.utcnow(),
+        "is_test": False,
+        "expected_label": None
+    })
+
+    if len(reporters) >= 3:
+        # Supprimer image de GridFS + DB
+        try:
+            fs.delete(updated_image["file_id"])
+        except Exception:
+            pass  # Si le fichier n'existe plus, on ignore
+        images_col.delete_one({"_id": ObjectId(image_id)})
+        return {"message": "Image supprimée après 3 signalements."}
+
+    return {"message": f"Signalement enregistré ({len(reporters)}/3)"}

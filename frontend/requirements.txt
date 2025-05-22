@@ -3,3 +3,4 @@ ultralytics
 requests
 python-dotenv
 Pillow
+st-clickable-images

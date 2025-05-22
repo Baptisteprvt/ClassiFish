@@ -158,6 +158,34 @@ else:
             except Exception as e:
                 st.error(f"Erreur lors de la récupération des comparaisons : {str(e)}")
 
+    # --- Leaderboard : Top utilisateurs fiables ---
+    st.sidebar.subheader("🏆 Top Annotateurs")
+
+    try:
+        res = requests.get(f"{BACKEND_URL}/leaderboard", params={"user_id": user_id})
+        res.raise_for_status()
+        data = res.json()
+
+        top_users = data.get("top_users", [])
+        user_rank = data.get("user_rank", None)
+
+        for idx, user in enumerate(top_users, start=1):
+            st.sidebar.markdown(
+                f"**{idx}. {user['user_id']}** — {user['annotations_total']}  | "
+                f"Confiance : {user['test_accuracy']}% "
+            )
+
+        if user_rank and user_rank["user_id"] not in [u["user_id"] for u in top_users]:
+            st.sidebar.markdown("---")
+            st.sidebar.markdown(
+                f"**{user_rank['rank']}ᵉ** — {user_rank['annotations_total']}  | "
+                f"Confiance : {user_rank['test_accuracy']}%"
+            )
+
+    except Exception as e:
+        st.sidebar.warning("⚠️ Erreur lors du chargement du leaderboard.")
+
+
     try:
         ai_stats = requests.get(f"{BACKEND_URL}/ai-stats?user_id={user_id}").json()
 
@@ -186,7 +214,6 @@ else:
 
     except Exception as e:
         pass  # Aucun test encore effectué ou erreur
-
 
     # Charger les stats utilisateur si pas encore fait
     if 'user_initialized' not in st.session_state:
@@ -217,61 +244,131 @@ else:
     if st.session_state.img_to_display is not None:
         st.image(st.session_state.img_to_display, caption="Image à annoter", use_container_width=True)
 
-        chosen = st.selectbox("Espèce :", ["ABL", "ALA", "ANG", "BAF", "BRE", "CHE", "HOT", "SIL"])
+        # chosen = st.selectbox("Espèce :", ["ABL", "ALA", "ANG", "BAF", "BRE", "CHE", "HOT", "SIL"])
 
         if not st.session_state.is_test:
-            if st.button("⏭️ Passer cette image", use_container_width=True):
-                # Passe direct à la suivante sans sauvegarder
-                fetch_new_image()
-                st.rerun()
+            if st.button("🚫 Signaler image non reconnaissable", use_container_width=True):
+                try:
+                    r = requests.post(f"{BACKEND_URL}/report_unrecognizable", json={
+                        "image_id": st.session_state.img_id,
+                        "user_id": user_id
+                    })
+                    if r.status_code == 403:
+                        st.warning("⚠️ Fiabilité insuffisante pour signaler une image.")
+                        fetch_new_image()
+                        st.rerun()
+                    elif r.ok:
+                        msg = r.json().get("message", "Signalement pris en compte.")
+                        st.success(msg)
+                        fetch_new_image()
+                        st.rerun()
+                    else:
+                        st.error(f"Erreur : {r.text}")
+                except Exception as e:
+                    st.error(f"Erreur lors du signalement : {str(e)}")
 
-        if st.button("✅ Soumettre annotation", use_container_width=True):
-            payload = {
-                "image_id": st.session_state.img_id,
-                "user_id": user_id,
-                "label": chosen,
-                "is_test": st.session_state.is_test,
-                "expected_label": st.session_state.expected_label
-            }
+        st.markdown("### Choisissez l'espèce :")
+        species_labels = ["ABL", "ALA", "ANG", "BAF", "BRE", "CHE", "HOT", "SIL"]
+        cols = st.columns(4)  # Affiche 2 lignes de 4 colonnes
 
-            r = requests.post(f"{BACKEND_URL}/annotations", json=payload)
-            if r.ok:
-                st.success("Annotation enregistrée !")
+        for i, label in enumerate(species_labels):
+            with cols[i % 4]:
+                st.markdown("<div style='margin-bot:10px'></div>", unsafe_allow_html=True)
+                st.image(f"../images/{label}.jpg", use_container_width=True)
+                if st.button(label, key=f"btn_{label}", use_container_width=True):
+                    chosen = label
 
-                if st.session_state.is_test:
-                    correct = chosen == st.session_state.expected_label
-                    st.session_state.test_results.append(correct)
-                    accuracy = sum(st.session_state.test_results) / len(st.session_state.test_results)
-                    st.session_state.user_accuracy = accuracy
-                    st.info(f"{'✅ Bonne réponse' if correct else '❌ Mauvaise réponse'} | Score actuel : {int(accuracy * 100)}%")
+                    payload = {
+                        "image_id": st.session_state.img_id,
+                        "user_id": user_id,
+                        "label": chosen,
+                        "is_test": st.session_state.is_test,
+                        "expected_label": st.session_state.expected_label
+                    }
 
-                # 🔁 Appel à vote_annotation uniquement si ce n'est pas une image test
-                if not st.session_state.is_test:
-                    try:
-                        res_vote = requests.post(f"{BACKEND_URL}/vote_annotation", json={
-                            "image_id": st.session_state.img_id,
-                            "user_id": user_id,
-                            "label": chosen
-                        })
+                    r = requests.post(f"{BACKEND_URL}/annotations", json=payload)
+                    if r.ok:
+                        st.success(f"Annotation '{chosen}' enregistrée !")
 
-                        if res_vote.status_code == 403:
-                            st.warning("⚠️ Votre fiabilité < 75%, votre vote n’a pas été compté.")
-                        elif res_vote.status_code == 400:
-                            pass  # Image déjà validée ou erreur
-                        elif res_vote.ok:
-                            vote_data = res_vote.json()
-                            if "ground_truth" in vote_data:
-                                st.sidebar.subheader("Succès : ")
-                                st.balloons()
-                                st.sidebar.success(f"🎉 L'image vient à été validée comme : {vote_data['ground_truth']}")
+                        if st.session_state.is_test:
+                            correct = chosen == st.session_state.expected_label
+                            st.session_state.test_results.append(correct)
+                            accuracy = sum(st.session_state.test_results) / len(st.session_state.test_results)
+                            st.session_state.user_accuracy = accuracy
+                            st.info(f"{'✅ Bonne réponse' if correct else '❌ Mauvaise réponse'} | Score actuel : {int(accuracy * 100)}%")
 
-                    except Exception as e:
-                        st.warning("⚠️ Impossible d'enregistrer votre vote.")
+                        if not st.session_state.is_test:
+                            try:
+                                res_vote = requests.post(f"{BACKEND_URL}/vote_annotation", json={
+                                    "image_id": st.session_state.img_id,
+                                    "user_id": user_id,
+                                    "label": chosen
+                                })
 
-                fetch_new_image()
-                st.rerun()
-            else:
-                st.error(f"Erreur lors de l'annotation : {r.text}")
+                                if res_vote.status_code == 403:
+                                    st.warning("⚠️ Votre fiabilité < 75%, votre vote n’a pas été compté.")
+                                elif res_vote.ok:
+                                    vote_data = res_vote.json()
+                                    if "ground_truth" in vote_data:
+                                        st.sidebar.subheader("Succès : ")
+                                        st.balloons()
+                                        st.sidebar.success(f"🎉 L'image a été validée : {vote_data['ground_truth']}")
+
+                            except Exception as e:
+                                st.warning("⚠️ Impossible d'enregistrer votre vote.")
+
+                        fetch_new_image()
+                        st.rerun()
+                    else:
+                        st.error(f"Erreur lors de l'annotation : {r.text}")
+        # if st.button("✅ Soumettre annotation", use_container_width=True):
+        #     payload = {
+        #         "image_id": st.session_state.img_id,
+        #         "user_id": user_id,
+        #         "label": chosen,
+        #         "is_test": st.session_state.is_test,
+        #         "expected_label": st.session_state.expected_label
+        #     }
+
+        #     r = requests.post(f"{BACKEND_URL}/annotations", json=payload)
+        #     if r.ok:
+        #         st.success("Annotation enregistrée !")
+
+        #         if st.session_state.is_test:
+        #             correct = chosen == st.session_state.expected_label
+        #             st.session_state.test_results.append(correct)
+        #             accuracy = sum(st.session_state.test_results) / len(st.session_state.test_results)
+        #             st.session_state.user_accuracy = accuracy
+        #             st.info(f"{'✅ Bonne réponse' if correct else '❌ Mauvaise réponse'} | Score actuel : {int(accuracy * 100)}%")
+
+        #         # 🔁 Appel à vote_annotation uniquement si ce n'est pas une image test
+        #         if not st.session_state.is_test:
+        #             try:
+        #                 res_vote = requests.post(f"{BACKEND_URL}/vote_annotation", json={
+        #                     "image_id": st.session_state.img_id,
+        #                     "user_id": user_id,
+        #                     "label": chosen
+        #                 })
+
+        #                 if res_vote.status_code == 403:
+        #                     st.warning("⚠️ Votre fiabilité < 75%, votre vote n’a pas été compté.")
+        #                 elif res_vote.status_code == 400:
+        #                     pass  # Image déjà validée ou erreur
+        #                 elif res_vote.ok:
+        #                     vote_data = res_vote.json()
+        #                     if "ground_truth" in vote_data:
+        #                         st.sidebar.subheader("Succès : ")
+        #                         st.balloons()
+        #                         st.sidebar.success(f"🎉 L'image vient à été validée comme : {vote_data['ground_truth']}")
+
+        #             except Exception as e:
+        #                 st.warning("⚠️ Impossible d'enregistrer votre vote.")
+
+        #         fetch_new_image()
+        #         st.rerun()
+        #     else:
+        #         st.error(f"Erreur lors de l'annotation : {r.text}")
+
     
     else:
         if remaining == 0 :
