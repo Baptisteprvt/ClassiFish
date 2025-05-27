@@ -274,6 +274,14 @@ else:
         for i, label in enumerate(species_labels):
             with cols[i % 4]:
                 st.markdown("<div style='margin-bot:10px'></div>", unsafe_allow_html=True)
+                import os
+
+                # Vérifiez le répertoire de travail actuel
+                print("Current working directory:", os.getcwd())
+
+                # Liste des fichiers dans le répertoire images
+                print("Files in images directory:", os.listdir("images"))
+
                 st.image(f"images/{label}.jpg", use_container_width=True)
                 if st.button(label, key=f"btn_{label}", use_container_width=True):
                     chosen = label
