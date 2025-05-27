@@ -282,7 +282,7 @@ else:
                 # Liste des fichiers dans le répertoire images
                 print("Files in images directory:", os.listdir("images"))
 
-                st.image(f"images/{label}.jpg", use_container_width=True)
+                st.image(f"frontend/images/{label}.jpg", use_container_width=True)
                 if st.button(label, key=f"btn_{label}", use_container_width=True):
                     chosen = label
 
