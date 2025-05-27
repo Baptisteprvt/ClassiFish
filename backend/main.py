@@ -83,9 +83,7 @@ def predict_image(img_pil: Image.Image):
     """
     Prédit l'espèce de poisson à partir d'une image PIL avec YOLOv8
     """
-    t0 = time.time()
     results = model(img_pil, verbose=False)
-    print("Prediction time:", time.time() - t0)
     for result in results:
         probs = result.probs  # Probabilités des classes
         if probs is not None:
