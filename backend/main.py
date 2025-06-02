@@ -75,27 +75,27 @@ class UserDetails(UserStats):
 
 # --- Chargement du modèle IA ---
 app = FastAPI()
-model = YOLO("best.pt")
+# model = YOLO("best.pt")
 labels = ["ABL", "ALA", "ANG", "BAF", "BRE", "CHE", "HOT", "SIL"]
 
-def predict_image(img_pil: Image.Image):
-    """
-    Prédit l'espèce de poisson à partir d'une image PIL avec YOLOv8
-    """
-    start_time = time.time()  # Début du chronomètre
+# def predict_image(img_pil: Image.Image):
+#     """
+#     Prédit l'espèce de poisson à partir d'une image PIL avec YOLOv8
+#     """
+#     start_time = time.time()  # Début du chronomètre
 
-    results = model(img_pil, verbose=False)
-    for result in results:
-        probs = result.probs  # Probabilités des classes
-        if probs is not None:
-            class_id = probs.top1  # Meilleure classe
-            prediction_time = time.time() - start_time  # Temps écoulé
-            print(f"Temps de prédiction de l'IA: {prediction_time:.4f} secondes")
-            return labels[class_id]
+    # results = model(img_pil, verbose=False)
+    # for result in results:
+    #     probs = result.probs  # Probabilités des classes
+    #     if probs is not None:
+    #         class_id = probs.top1  # Meilleure classe
+    #         prediction_time = time.time() - start_time  # Temps écoulé
+    #         print(f"Temps de prédiction de l'IA: {prediction_time:.4f} secondes")
+    #         return labels[class_id]
 
-    prediction_time = time.time() - start_time  # Temps écoulé
-    print(f"Temps de prédiction de l'IA: {prediction_time:.4f} secondes")
-    return None
+    # prediction_time = time.time() - start_time  # Temps écoulé
+    # print(f"Temps de prédiction de l'IA: {prediction_time:.4f} secondes")
+    # return None
 
 # --- Routes ---
 
