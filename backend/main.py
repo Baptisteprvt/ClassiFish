@@ -166,8 +166,9 @@ def get_image(user_id: str):
 
     # Prédiction IA si c'est un test
     ai_prediction = None
-    pil_image = Image.open(BytesIO(base64.b64decode(encoded_image)))
-    ai_prediction = predict_image(pil_image)
+    pred_doc = ai_predictions_col.find_one({"image_id": str(img_doc["_id"])})
+    ai_prediction = pred_doc["predicted_label"] if pred_doc else None
+
     ai_predictions_col.update_one(
         {"image_id": str(img_doc["_id"]), "user_id": user_id},
         {"$setOnInsert": {

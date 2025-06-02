@@ -176,3 +176,4 @@ cython_debug/
 
 Model/
 images_to_classify/
+best.pt
