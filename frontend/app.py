@@ -39,7 +39,6 @@ if 'is_test' not in st.session_state:
 if 'expected_label' not in st.session_state:
     st.session_state.expected_label = None
 
-
 # --- Fonction : récupérer une nouvelle image ---
 def fetch_new_image():
     user_id = st.session_state.user_id
@@ -129,8 +128,41 @@ if not st.session_state.authenticated:
 else:
     user_id = st.session_state.user_id
     st.sidebar.header(f"👤 {user_id}")
+    # Affiche une icône "ℹ️" en haut à droite
+    col1, col2 = st.columns([10, 1])
+    with col2:
+        if st.button("ℹ️", help="Informations RGPD", key="rgpd_icon"):
+            st.session_state.show_rgpd = not st.session_state.get("show_rgpd", False)
 
+    # Affiche la boîte RGPD si activée
+    if st.session_state.get("show_rgpd", False):
+        with st.container():
+            st.markdown(
+                """
+                <div style="background-color:#000000; padding: 1em; border-radius: 8px; word-wrap: break-word; border: 2px solid white;">
+                    <h4 style="margin-top: 0;">Vie privée :</h4>
+                    <p style="margin-bottom: 0.5em;">
+                        Vos annotations et votre identifiant sont enregistrés pour suivre votre progression et améliorer l'IA.<br>
+                        Aucune donnée sensible n’est collectée.<br>
+                        Les informations ne sont partagées avec personne en dehors de ce projet.<br>
+                        Pour toute suppression de données, contactez :
+                        <a href="mailto:baptiste-externe.prevot@cnr.tm.fr">baptiste-externe.prevot@cnr.tm.fr</a>.
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+    # Initialise l'état si besoin
+    if "show_comparison" not in st.session_state:
+        st.session_state.show_comparison = False
+
+    # Bouton toggle
     if st.sidebar.button("📊 Comparer mes votes à l'IA", use_container_width=True):
+        st.session_state.show_comparison = not st.session_state.show_comparison
+
+    # Si l'affichage est activé
+    if st.session_state.show_comparison:
         with st.spinner("Chargement des comparaisons..."):
             try:
                 res = requests.get(f"{BACKEND_URL}/comparison?user_id={user_id}")
@@ -139,24 +171,25 @@ else:
 
                 if not comparison_data:
                     st.warning("Aucune comparaison disponible.")
+                else:
+                    # Préparation des données pour affichage
+                    table = [
+                        {
+                            "Image ID": item["image_id"],
+                            "Attendu": item["attendu"] or "",
+                            "Utilisateur": item["utilisateur"] or "",
+                            "IA": item["ia"] or ""
+                        }
+                        for item in comparison_data
+                    ]
 
-                # Préparation des données pour affichage
-                table = []
-
-                for item in comparison_data:
-                    table.append({
-                        "Image ID": item["image_id"],
-                        "Attendu": item["attendu"] or "",
-                        "Utilisateur": item["utilisateur"] or "",
-                        "IA": item["ia"] or ""
-                    })
-                # Affichage du tableau
-                import pandas as pd
-                df = pd.DataFrame(table)
-                st.dataframe(df, hide_index=True)
+                    import pandas as pd
+                    df = pd.DataFrame(table)
+                    st.dataframe(df, hide_index=True)
 
             except Exception as e:
                 st.error(f"Erreur lors de la récupération des comparaisons : {str(e)}")
+
 
     # --- Leaderboard : Top utilisateurs fiables ---
     st.sidebar.subheader("🏆 Top Annotateurs")
@@ -324,54 +357,6 @@ else:
                         st.rerun()
                     else:
                         st.error(f"Erreur lors de l'annotation : {r.text}")
-        # if st.button("✅ Soumettre annotation", use_container_width=True):
-        #     payload = {
-        #         "image_id": st.session_state.img_id,
-        #         "user_id": user_id,
-        #         "label": chosen,
-        #         "is_test": st.session_state.is_test,
-        #         "expected_label": st.session_state.expected_label
-        #     }
-
-        #     r = requests.post(f"{BACKEND_URL}/annotations", json=payload)
-        #     if r.ok:
-        #         st.success("Annotation enregistrée !")
-
-        #         if st.session_state.is_test:
-        #             correct = chosen == st.session_state.expected_label
-        #             st.session_state.test_results.append(correct)
-        #             accuracy = sum(st.session_state.test_results) / len(st.session_state.test_results)
-        #             st.session_state.user_accuracy = accuracy
-        #             st.info(f"{'✅ Bonne réponse' if correct else '❌ Mauvaise réponse'} | Score actuel : {int(accuracy * 100)}%")
-
-        #         # 🔁 Appel à vote_annotation uniquement si ce n'est pas une image test
-        #         if not st.session_state.is_test:
-        #             try:
-        #                 res_vote = requests.post(f"{BACKEND_URL}/vote_annotation", json={
-        #                     "image_id": st.session_state.img_id,
-        #                     "user_id": user_id,
-        #                     "label": chosen
-        #                 })
-
-        #                 if res_vote.status_code == 403:
-        #                     st.warning("⚠️ Votre fiabilité < 75%, votre vote n’a pas été compté.")
-        #                 elif res_vote.status_code == 400:
-        #                     pass  # Image déjà validée ou erreur
-        #                 elif res_vote.ok:
-        #                     vote_data = res_vote.json()
-        #                     if "ground_truth" in vote_data:
-        #                         st.sidebar.subheader("Succès : ")
-        #                         st.balloons()
-        #                         st.sidebar.success(f"🎉 L'image vient à été validée comme : {vote_data['ground_truth']}")
-
-        #             except Exception as e:
-        #                 st.warning("⚠️ Impossible d'enregistrer votre vote.")
-
-        #         fetch_new_image()
-        #         st.rerun()
-        #     else:
-        #         st.error(f"Erreur lors de l'annotation : {r.text}")
-
     
     else:
         if remaining == 0 :
