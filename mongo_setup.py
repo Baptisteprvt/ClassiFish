@@ -54,7 +54,7 @@ load_dotenv()
 client = MongoClient(os.getenv("ATLAS_URI"))
 db = client[os.getenv("DB_NAME")]
 fs = gridfs.GridFS(db)
-model = YOLO(r"backend/best.pt")
+model = YOLO(r"best.pt")
 
 images_col = db["images"]
 ai_predictions_col = db["ai_predictions"]

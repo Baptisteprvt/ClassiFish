@@ -15,6 +15,7 @@ import random
 from PIL import Image
 import random
 from ultralytics import YOLO
+import bcrypt
 
 # --- Configuration ---
 load_dotenv()
@@ -101,7 +102,7 @@ labels = ["ABL", "ALA", "ANG", "BAF", "BRE", "CHE", "HOT", "SIL"]
 
 @app.get("/image")
 def get_image(user_id: str):
-    max_test = 5
+    max_test = 20
     test_chance = 0.1
     will_it_be_test = random.random()
     only_val = False
@@ -391,18 +392,23 @@ def login_or_register(data: dict):
     user = users_col.find_one({"user_id": user_id})
 
     if user:
-        if user.get("password") != password:
+        hashed_pw = user.get("password")
+        if not bcrypt.checkpw(password.encode('utf-8'), hashed_pw):
             raise HTTPException(401, "Mot de passe incorrect.")
         return {"exists": True, "message": "Authentifié"}
     else:
+        salt = bcrypt.gensalt()
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
+
         users_col.insert_one({
             "user_id": user_id,
-            "password": password,
+            "password": hashed_password,
             "test_annotations": 0,
             "test_correct": 0,
             "test_accuracy": 1.0
         })
         return {"exists": False, "message": "Nouvel utilisateur créé"}
+
     
 @app.get("/comparison")
 def get_comparison(user_id: str):
@@ -441,8 +447,6 @@ def get_comparison(user_id: str):
 
 @app.get("/leaderboard")
 def get_leaderboard(user_id: Optional[str] = None):
-    SEUIL_CONFIANCE_MIN = 0.75
-
     # Liste des utilisateurs fiables triés par nombre d'annotations
     pipeline = [
         {"$project": {
