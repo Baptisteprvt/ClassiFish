@@ -1,47 +1,24 @@
 from pymongo import MongoClient
-from bson import ObjectId
 from dotenv import load_dotenv
 import os
 
-# --- Charger .env ---
+# Charger les variables d'environnement
 load_dotenv()
-ATLAS_URI = os.getenv("ATLAS_URI")
-DB_NAME = os.getenv("DB_NAME")
 
-if not ATLAS_URI or not DB_NAME:
-    raise RuntimeError("Définir ATLAS_URI et DB_NAME dans .env")
+# Connexion à MongoDB
+client = MongoClient(os.getenv("ATLAS_URI"))
+db = client[os.getenv("DB_NAME")]
 
-# --- Connexion MongoDB ---
-client = MongoClient(ATLAS_URI)
-db = client[DB_NAME]
-images_col = db["images"]
-annotations_col = db["annotations"]
+# Collection des utilisateurs
+users_col = db["users"]  # Adapte si ta collection a un autre nom
 
-# --- Paramètre utilisateur ---
-user_id = "ea"
+# Mise à jour de la confiance à 101% pour Aude
+result = users_col.update_one(
+    {"user_id": "Aude"},  # critère de recherche
+    {"$set": {"test_accuracy": 101.0}}  # modification
+)
 
-# --- Images annotées par l'utilisateur ---
-annotated_ids = annotations_col.distinct("image", {"user_id": user_id})
-nb_annotated = len(annotated_ids)
-
-# --- Images encore à annoter pour l'utilisateur ---
-nb_remaining = images_col.count_documents({
-    "validated": False,
-    "_id": {"$nin": [ObjectId(i) for i in annotated_ids]}
-})
-
-# --- Total d’images dans la base ---
-total_images = images_col.count_documents({})
-
-# --- Images marquées comme non reconnaissables ---
-nb_unrecognizable = annotations_col.count_documents({
-    "user_id": user_id,
-    "label": "UNRECOGNIZABLE"
-})
-
-# --- Affichage ---
-print(f"📊 Statistiques pour l'utilisateur '{user_id}'")
-print(f"🔢 Total d'images dans la base : {total_images}")
-print(f"✍️  Images annotées par {user_id} : {nb_annotated}")
-print(f"📛 Dont 'non reconnaissables' : {nb_unrecognizable}")
-print(f"📷 Images restantes à annoter : {nb_remaining}")
+if result.matched_count == 0:
+    print("❌ Utilisateur 'Aude' introuvable.")
+else:
+    print("✅ test_accuracy mis à jour à 101% pour Aude.")

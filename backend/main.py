@@ -228,7 +228,7 @@ def save_annotation(ann: AnnotationRequest):
             }},
             upsert=True
         )
-    if(user.get("test_accuracy", 0) > SEUIL_CONFIANCE_MIN):
+    if(user.get("test_accuracy", 0) > SEUIL_CONFIANCE_MIN and user.get("test_accuracy", 0) < 101):
         annotations = user.get("annotations_total", 0) + 1
     else:
         annotations = user.get("annotations_total", 0)

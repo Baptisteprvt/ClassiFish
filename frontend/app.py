@@ -152,7 +152,7 @@ else:
                 """,
                 unsafe_allow_html=True
             )
-            
+
     # Initialise l'état si besoin
     if "show_comparison" not in st.session_state:
         st.session_state.show_comparison = False
@@ -302,16 +302,26 @@ else:
 
         st.markdown("### Choisissez l'espèce :")
         species_labels = ["ABL", "ALA", "ANG", "BAF", "BRE", "CHE", "HOT", "SIL"]
+        labels_help = {
+            "ABL": "Ablette (Alburnus alburnus)",
+            "ALA": "Alose (Alosa)",
+            "ANG": "Anguille (Anguilla anguilla)",
+            "BAF": "Barbeau (Barbus barbus)",
+            "BRE": "Brème (Abramis brama)",
+            "CHE": "Chevesne (Squalius cephalus)",
+            "HOT": "Hotu (Chondrostoma nasus)",
+            "SIL": "Silure (Silurus)"
+        }
         cols = st.columns(4)  # Affiche 2 lignes de 4 colonnes
 
-        for i, label in enumerate(species_labels):
+        for i, label in enumerate(labels_help.keys()):
             with cols[i % 4]:
                 st.markdown("<div style='margin-bot:10px'></div>", unsafe_allow_html=True)
                 if(BACKEND_URL == "http://localhost:8000"):
                     st.image(f"images/{label}.jpg", use_container_width=True)
                 else:
                     st.image(f"frontend/images/{label}.jpg", use_container_width=True)
-                if st.button(label, key=f"btn_{label}", use_container_width=True):
+                if st.button(label, help=labels_help[label], key=f"btn_{label}", use_container_width=True):
                     chosen = label
 
                     payload = {
