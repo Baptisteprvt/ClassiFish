@@ -15,7 +15,7 @@ users_col = db["users"]  # Adapte si ta collection a un autre nom
 # Mise à jour de la confiance à 101% pour Aude
 result = users_col.update_one(
     {"user_id": "Aude"},  # critère de recherche
-    {"$set": {"test_accuracy": 101.0}}  # modification
+    {"$set": {"test_accuracy": 1.01}}  # modification
 )
 
 if result.matched_count == 0:

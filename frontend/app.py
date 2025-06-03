@@ -127,7 +127,10 @@ if not st.session_state.authenticated:
 # --- Interface principale ---
 else:
     user_id = st.session_state.user_id
-    st.sidebar.header(f"👤 {user_id}")
+    if (user_id=="Aude"):
+        st.sidebar.header(f"❤️ {user_id}")
+    else:
+        st.sidebar.header(f"👤 {user_id}")
     # Affiche une icône "ℹ️" en haut à droite
     col1, col2 = st.columns([10, 1])
     with col2:
